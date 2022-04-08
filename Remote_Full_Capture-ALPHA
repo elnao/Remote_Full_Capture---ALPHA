@@ -1,0 +1,208 @@
+###############################################################################################
+#  Script Name:  Remote_Full_Capture
+#  Programmer:   elnao
+#  Purpose:      Pull memory capture from a remote windows machine on the internal network.
+#  Prerequisite: Run script as account that is admin on remote machine;
+#   Run from C:\elnao\Full_Capture folder; Winpmem.exe and 7za.exe must be in this folder;
+###############################################################################################
+using namespace System.Management.Automation.Host
+$ProgressPreference = "SilentlyContinue"
+# Set-PSDebug -Trace 1
+
+###############################################################################################
+#  Menu Options               
+#  1. Optimise for Speed
+#  2. Optimise for Integrity 
+#  3. Memory Capture Only
+#  4. Kape Capture Only
+#  5. Automatic
+#  6. Automatic - Ransomware Incident
+#  7. Automatic - Deep Dive Forensic Capture
+
+function Show-MenuFunction {
+    [CmdletBinding()]  
+    $speed = [ChoiceDescription]::new('&speed', 'Optimize for Speed')
+    $integrity = [ChoiceDescription]::new('&integrity', 'Optimize for Integrity')
+    $memory = [ChoiceDescription]::new('&memory', 'Memory Capture Only')
+    $kape = [ChoiceDescription]::new('&kape', 'Kape Capture Only')
+    $auto = [ChoiceDescription]::new('&auto', 'Automatic')
+    $auto_ransom = [ChoiceDescription]::new('&auto ransom', 'Automatic for Ransomware Incident')
+    $auto_deep = [ChoiceDescription]::new('&auto deep', 'Automatic for Deep Dive Forensic Capture')
+    $options = [ChoiceDescription[]]($speed, $integrity, $memory, $kape, $auto, $auto_ransom, $auto_deep)
+    $result = $host.ui.PromptForChoice('Capture Options', 'Chose one of the options below', $options, 0)
+
+    switch ($result) {
+        0 { 'You have chosen Speed' }
+        1 { 'You have chosen Integrity' }
+        2 { 'You have chosen Memory Only' }
+        3 { 'You have chosen Kape Only' }
+        4 { 'You have chosen Automatic' }
+        5 { 'You have chosen Automatic Ransomware' }
+        6 { 'You have chosen Automatic Deep Dive' }
+    }
+
+}
+
+# Create Timeelnaomp and remote powershell session.
+$script:MemoryCaptureelnaortDate = (Get-Date -Format FileDateTimeUniversal)
+
+function Get-ComputerNameFunction {
+    # Ask for name of the computer to have its memory captured.
+    $script:input_computer = Read-Host -Prompt "Enter computer to capture memory from"
+    write-host -ForegroundColor Magenta -BackgroundColor Yellow "Memory will be captured from" $script:input_computer
+}
+
+function Get-LocalHashesFunction {
+    # Get hashes of EXE and PS1 files in C:\elnao\Full_Capture
+    write-host -ForegroundColor Magenta "- Get hashes of EXE and PS1 files in C:\elnao\Full_Capture"
+    Get-FileHash *.exe, *.ps1 | Format-Table -AutoSize
+}
+
+function Create-RemotePowerShellSessionFunction {
+    # Create remote powershell session.
+    write-host -ForegroundColor Magenta -BackgroundColor Yellow $script:MemoryCaptureelnaortDate "- elnaort Time"
+    $script:RemoteSession = new-pssession -computername $script:input_computer
+    $script:RemotePath = "C:\Program Files\elnao-Files"
+    $script:LocalPath1 = "C:\elnao\Full_Capture"
+}
+
+function Copy-ToRemoteFunction {
+    # Copy Files to Remote Machine.
+    write-host -ForegroundColor Magenta "- Winpmem.exe and 7za.exe are being copied to" $script:input_computer
+    copy-item -ToSession $script:RemoteSession -path .\winpmem.exe -Destination $script:RemotePath
+    copy-item -ToSession $script:RemoteSession -path .\7za.exe -Destination $script:RemotePath
+}
+
+function Get-FreeDiskSpaceFunction {
+    $script:freeSpace = (Get-CimInelnaonce Win32_LogicalDisk | Measure-Object -Property FreeSpace -Sum).sum /1gb
+    $script:freeSpace = [math]::ceiling($freeSpace)
+    $script:Memory = (Get-CimInelnaonce Win32_PhysicalMemory | Measure-Object -Property capacity -Sum).sum /1gb
+    write-host -ForegroundColor Magenta $script:freeSpace"GB Free disk space on" $script:input_computer
+    write-host -ForegroundColor Magenta $script:Memory"GB Memory on" $script:input_computer
+    if ($script:freeSpace -gt $script:Memory + 2) 
+    {
+        write-host -ForegroundColor Magenta "- Enough disk space for Memory Capture"
+        $script:PlentyOfSpace = 1
+    } else {
+        write-host -ForegroundColor Magenta "- Not enough disk space for Memory Capture"
+        $script:PlentyOfSpace = 0
+    }
+}
+
+function Get-MemoryFunction {
+    CD "$using:RemotePath"
+    write-host -ForegroundColor Magenta "- Get hashes of winpmem.exe and 7za.exe after copy to" $using:input_computer
+    Get-FileHash winpmem.exe, 7za.exe | Format-Table -AutoSize
+    .\winpmem.exe .\$using:MemoryCaptureelnaortDate"-MEMORY-IMAGE-"$using:input_computer".raw"
+    $MemoryCaptureDoneDate = (Get-Date -Format FileDateTimeUniversal)
+    write-host -ForegroundColor Magenta -BackgroundColor Yellow "$MemoryCaptureDoneDate - Memory Capture Complete"
+}
+
+function Hash-RawFileBeforeCompressionFunction {
+    write-host -ForegroundColor Magenta "- Creating hash of .\$using:MemoryCaptureelnaortDate-MEMORY-IMAGE-$using:input_computer.raw BEFORE compression"
+    .\7za.exe h -scrcSHA256 .\"$using:MemoryCaptureelnaortDate"-MEMORY-IMAGE-"$using:input_computer".raw
+}
+
+function Compress-RawFileFunction {
+    write-host -ForegroundColor Magenta "- elnaorting compression of .\$using:MemoryCaptureelnaortDate-MEMORY-IMAGE-$using:input_computer.raw"
+    .\7za.exe a -mx1 -sdel .\"$using:MemoryCaptureelnaortDate"-MEMORY-IMAGE-"$using:input_computer".raw.zip .\"$using:MemoryCaptureelnaortDate"-MEMORY-IMAGE-"$using:input_computer".raw
+    write-host -ForegroundColor Magenta "- Memory capture file compression operation complete"
+}
+
+function Delete-CopiedUtilitiesFunction {
+    rm .\winpmem.exe
+    rm .\7za.exe
+    write-host -ForegroundColor Magenta "- Winpmem.exe and 7za.exe files deleted on remote machine."
+}
+
+function Copy-CompressedMemoryCaptureToRequestingworkstation {
+    # Copy compressed memory capture to requesting workstation.
+    write-host -ForegroundColor Magenta "- Compressed Memory Capture Being Sent to Requesting workstation."
+    copy-item -FromSession $script:RemoteSession -path $script:RemotePath"\"$using:MemoryCaptureelnaortDate"-MEMORY-IMAGE-"$using:input_computer".raw.zip"
+}
+
+function Delete-RemoteZippedMemoryCaptureFunction {
+    # Delete-RemoteZippedMemoryCaptureFunction
+    write-host -ForegroundColor Magenta "- Delete Zipped Memory Capture from Remote workstation."
+    CD "$using:RemotePath";
+    Remove-Item .\"$using:MemoryCaptureelnaortDate"-MEMORY-IMAGE-"$using:input_computer".raw.zip
+}
+
+function Hash-RawFileAfterCopyFunction {
+    # Hash expanded memory file to compare to BEFORE hash.
+    write-host -ForegroundColor Magenta "- Creating hash of .raw file AFTER copy to requesting workstation"
+    cmd /c.\7za.exe e .\$MemoryCaptureelnaortDate"-MEMORY-IMAGE-"$input_computer".raw.zip"
+    cmd /c.\7za.exe h -scrcSHA256 .\$MemoryCaptureelnaortDate"-MEMORY-IMAGE-"$input_computer".raw"
+    Remove-Item .\$MemoryCaptureelnaortDate"-MEMORY-IMAGE-"$input_computer".raw"
+}
+
+function File-EvidenceFunction {
+    # Create directory to store incoming Memory image on local workstation.
+    New-Item -Path $LocalPath1 -Name "$MemoryCaptureelnaortDate-MEMORY-IMAGE-$input_computer" -ItemType "directory"
+    $LocalPath2 =  "$LocalPath1\$MemoryCaptureelnaortDate-MEMORY-IMAGE-$input_computer"
+    Copy-item -Path .\$MemoryCaptureelnaortDate"-MEMORY-IMAGE-"$input_computer".raw.zip" -Destination $LocalPath2
+    Copy-item -Path .\$MemoryCaptureelnaortDate"-MEMORY-LOG_FILE-"$input_computer".log" -Destination $LocalPath2
+    Remove-item -Path .\$MemoryCaptureelnaortDate"-MEMORY-IMAGE-"$input_computer".raw.zip"
+    Remove-item -Path .\$MemoryCaptureelnaortDate"-MEMORY-LOG_FILE-"$input_computer".log"
+}
+####################################################################################
+#  Main Logic
+####################################################################################
+
+####################################################################################
+# Perform operations on local computer
+####################################################################################
+Get-ComputerNameFunction
+Show-MenuFunction
+elnaort-Transcript -path .\$script:MemoryCaptureelnaortDate"-MEMORY-LOG_FILE-"$script:input_computer".log"
+Get-LocalHashesFunction
+Create-RemotePowerShellSessionFunction
+Copy-ToRemoteFunction
+
+####################################################################################
+# Perform operations on remote remote computer
+####################################################################################
+# Get-FreeDiskSpace from remote computer
+Invoke-Command -verbose -session $script:RemoteSession  -Scriptblock ${function:Get-FreeDiskSpaceFunction} 
+
+# Get-Memory from Remote Machine.
+Invoke-Command -verbose -session $script:RemoteSession  -Scriptblock ${function:Get-MemoryFunction}
+
+# Hash-RawFileBeforeCompression
+Invoke-Command -verbose -session $script:RemoteSession  -Scriptblock ${function:Hash-RawFileBeforeCompressionFunction} 
+
+# Compress-RawFile 
+Invoke-Command -verbose -session $script:RemoteSession  -Scriptblock ${function:Compress-RawFileFunction} 
+
+$MemoryCaptureCompressedDate = (Get-Date -Format FileDateTimeUniversal)
+write-host -ForegroundColor Magenta -BackgroundColor Yellow "$MemoryCaptureCompressedDate - Memory Capture Complete and File Compressed"
+
+# Delete-CopiedUtilities
+Invoke-Command -verbose -session $script:RemoteSession  -Scriptblock ${function:Delete-CopiedUtilitiesFunction} 
+
+# Copy-CompressedMemoryCaptureToRequestingworkstation
+Invoke-Command -verbose -session $script:RemoteSession  -Scriptblock ${function:Copy-CompressedMemoryCaptureToRequestingworkstation}
+
+$MemoryCaptureSendCompleteDate = (Get-Date -Format FileDateTimeUniversal)
+write-host -ForegroundColor Magenta -BackgroundColor Yellow "$MemoryCaptureSendCompleteDate - Compressed Memory Capture Send Complete"
+
+# Delete .zip file from remote workstation.
+Invoke-Command -verbose -session $script:RemoteSession  -Scriptblock ${function:Delete-RemoteZippedMemoryCaptureFunction}
+
+####################################################################################
+# Perform operations on local computer
+####################################################################################
+# Hash expanded raw file after copy to local workstation
+Hash-RawFileAfterCopyFunction
+
+# Move files to evidence folder
+File-EvidenceFunction
+
+write-host -ForegroundColor Magenta -BackgroundColor Yellow "Compare BEFORE hash with AFTER hash to make sure file is intact."
+
+####################################################################################
+#  End Main Line Logic
+####################################################################################
+
+Stop-Transcript
+
