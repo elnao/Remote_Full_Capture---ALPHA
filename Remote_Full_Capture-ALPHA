@@ -11,13 +11,10 @@ $ProgressPreference = "SilentlyContinue"
 
 ###############################################################################################
 #  Menu Options               
-#  1. Optimise for Speed
-#  2. Optimise for Integrity 
-#  3. Memory Capture Only
-#  4. Kape Capture Only
-#  5. Automatic
-#  6. Automatic - Ransomware Incident
-#  7. Automatic - Deep Dive Forensic Capture
+#  0. Fast Memory Capture
+#  1. High Integrity Memory Capture
+#  2. Kape Capture Only
+#  3. Full - Order of Volatility
 
 # Create Timestamp and remote powershell session.
 $script:MemoryCaptureStartDate = (Get-Date -Format FileDateTimeUniversal)
@@ -34,7 +31,7 @@ function Show-MenuFunction {
     $speed = [ChoiceDescription]::new('&speed', 'Fast Memory Capture')
     $integrity = [ChoiceDescription]::new('&integrity', 'High Integrity Memory Capture')
     $kape = [ChoiceDescription]::new('&kape', 'Kape Capture Only')
-    $auto = [ChoiceDescription]::new('&auto', 'Order of Volatility')
+    $auto = [ChoiceDescription]::new('&auto', 'FUll - Order of Volatility')
     # $auto_ransom = [ChoiceDescription]::new('&auto ransom', 'Automatic for Ransomware Incident')
     # $auto_deep = [ChoiceDescription]::new('&auto deep', 'Automatic for Deep Dive Forensic Capture')
     $options = [ChoiceDescription[]]($speed, $integrity, $kape, $auto) # , $auto, $auto_ransom, $auto_deep)
@@ -115,11 +112,23 @@ function Delete-CopiedUtilitiesFunction {
     write-host -ForegroundColor Magenta "- Winpmem.exe and 7za.exe files deleted on remote machine."
 }
 
-function Copy-CompressedMemoryCaptureToRequestingWorkstation {
+function Copy-CompressedMemoryCaptureToRequestingWorkstationFunction {
     # Copy compressed memory capture to requesting workstation.
     write-host -ForegroundColor Magenta "- Compressed Memory Capture Being Sent to Requesting Workstation."
     try {
         copy-item -FromSession $script:RemoteSession -path $script:RemotePath"\"$script:MemoryCaptureStartDate"-MEMORY-IMAGE-"$script:input_computer".raw.zip" -ErrorAction stop
+    }
+    catch {
+    Write-Warning $_.Exception
+    Stop-Transcript
+    }
+}
+
+function Copy-RawMemoryCaptureToRequestingWorkstationFunction {
+    # Copy compressed memory capture to requesting workstation.
+    write-host -ForegroundColor Magenta "- Raw Memory Capture Being Sent to Requesting Workstation."
+    try {
+        copy-item -FromSession $script:RemoteSession -path $script:RemotePath"\"$script:MemoryCaptureStartDate"-MEMORY-IMAGE-"$script:input_computer".raw" -ErrorAction stop
     }
     catch {
     Write-Warning $_.Exception
@@ -137,9 +146,7 @@ function Delete-RemoteZippedMemoryCaptureFunction {
 function Hash-RawFileAfterCopyFunction {
     # Hash expanded memory file to compare to BEFORE hash.
     write-host -ForegroundColor Magenta "- Creating hash of .raw file AFTER copy to requesting workstation"
-    cmd /c.\7za.exe e .\$MemoryCaptureStartDate"-MEMORY-IMAGE-"$input_computer".raw.zip"
     cmd /c.\7za.exe h -scrcSHA256 .\$MemoryCaptureStartDate"-MEMORY-IMAGE-"$input_computer".raw"
-    Remove-Item .\$MemoryCaptureStartDate"-MEMORY-IMAGE-"$input_computer".raw"
 }
 
 function File-EvidenceFunction {
@@ -154,13 +161,14 @@ function File-EvidenceFunction {
 }
 #endregion
 
-#region Run Selected Option
+#region Run Selected Functions
 function Invoke-MemoryCaptureFastFunction {
+    Create-RemotePowerShellSessionFunction
     Copy-ToRemoteFunction
     Invoke-Command -verbose -session $script:RemoteSession  -Scriptblock ${function:Get-FreeDiskSpaceFunction}
     if ($script:PlentyOfSpace = 1) {
         Invoke-Command -verbose -session $script:RemoteSession  -Scriptblock ${function:Get-MemoryFunction}
-        Copy-RawMemoryCaptureToRequestingWorkstationFunction #  Must Create
+        Copy-RawMemoryCaptureToRequestingWorkstationFunction
         Invoke-Command -verbose -session $script:RemoteSession  -Scriptblock ${function:Delete-CopiedUtilitiesFunction} 
         Hash-RawFileAfterCopyFunction
         File-EvidenceFunction # must accomidate raw file
@@ -224,19 +232,18 @@ function Invoke-KapeCaptureOnlyFunction {
 #  Main Logic
 ####################################################################################
 
-
-
 ####################################################################################
 # Perform operations on local computer
 ####################################################################################
 Get-ComputerNameFunction
 Start-Transcript -path .\$script:MemoryCaptureStartDate"-MEMORY-LOG_FILE-"$script:input_computer".log"
-Show-MenuFunction
 Get-LocalHashesFunction
+Show-MenuFunction  # go to selected option.
+
 Create-RemotePowerShellSessionFunction
 Copy-ToRemoteFunction
 
-####################################################################################
+<####################################################################################
 # Perform operations on remote remote computer
 ####################################################################################
 # Get-FreeDiskSpace from remote computer
@@ -264,7 +271,7 @@ $MemoryCaptureSendCompleteDate = (Get-Date -Format FileDateTimeUniversal)
 write-host -ForegroundColor Magenta -BackgroundColor Yellow "$MemoryCaptureSendCompleteDate - Compressed Memory Capture Send Complete"
 
 # Delete .zip file from remote workstation.
-Invoke-Command -verbose -session $script:RemoteSession  -Scriptblock ${function:Delete-RemoteZippedMemoryCaptureFunction}
+Invoke-Command -verbose -session $script:RemoteSession  -Scriptblock ${function:Delete-RemoteZippedMemoryCaptureFunction}#>
 
 ####################################################################################
 # Perform operations on local computer
@@ -281,6 +288,4 @@ File-EvidenceFunction
 #  End Main Line Logic
 ####################################################################################
 #endregion
-
-
 
