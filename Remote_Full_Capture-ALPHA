@@ -1,6 +1,6 @@
 ###############################################################################################
 #  Script Name:  Remote_Full_Capture
-#  Programmer:   RRB
+#  Programmer:   Elnao
 #  Purpose:      Pull memory capture from a remote windows machine on the internal network.
 #  Prerequisite: Run script as account that is admin on remote machine;
 #  Run from C:\sta\Full_Capture folder; Winpmem.exe and 7za.exe must be in this folder;
@@ -58,7 +58,7 @@ function Create-RemotePowerShellSessionFunction {
     # Create remote powershell session.
     write-host -ForegroundColor Magenta -BackgroundColor Yellow $script:MemoryCaptureStartDate "- Start Time"
     $script:RemoteSession = new-pssession -computername $script:input_computer
-    $script:RemotePath = "C:\Program Files\TSCU-Files"
+    $script:RemotePath = "C:\Program Files\ELNAO-Files"
     $script:LocalPath1 = "C:\sta\Full_Capture"
 }
 
